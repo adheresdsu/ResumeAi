@@ -12,6 +12,48 @@ import {
   signUpSchema,
 } from "@/lib/validations/auth";
 
+function getSupabaseConfigErrorMessage() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return "Missing Supabase configuration. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local and restart the server.";
+  }
+
+  try {
+    new URL(supabaseUrl);
+  } catch {
+    return "NEXT_PUBLIC_SUPABASE_URL is invalid. Use the full Supabase project URL from your Supabase API settings.";
+  }
+
+  return null;
+}
+
+function getAuthErrorMessage(error: unknown) {
+  const fallback = "Authentication failed. Please try again.";
+  const rawMessage =
+    typeof error === "string"
+      ? error
+      : error &&
+          typeof error === "object" &&
+          "message" in error &&
+          typeof (error as { message: unknown }).message === "string"
+        ? (error as { message: string }).message
+        : fallback;
+
+  const normalized = rawMessage.toLowerCase();
+
+  if (normalized.includes("fetch failed") || normalized.includes("failed to fetch")) {
+    return "Could not reach Supabase. Verify NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY, and confirm your Supabase project is active.";
+  }
+
+  if (normalized.includes("supabaseurl is required") || normalized.includes("supabasekey is required")) {
+    return "Supabase environment variables are missing. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local and restart the server.";
+  }
+
+  return rawMessage;
+}
+
 export async function signInAction(
   _prevState: AuthActionState,
   formData: FormData,
@@ -25,11 +67,20 @@ export async function signInAction(
     return { status: "error", message: parsed.error.issues[0].message };
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword(parsed.data);
+  const configError = getSupabaseConfigErrorMessage();
+  if (configError) {
+    return { status: "error", message: configError };
+  }
 
-  if (error) {
-    return { status: "error", message: error.message };
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.auth.signInWithPassword(parsed.data);
+
+    if (error) {
+      return { status: "error", message: getAuthErrorMessage(error) };
+    }
+  } catch (error) {
+    return { status: "error", message: getAuthErrorMessage(error) };
   }
 
   const redirectTo = formData.get("redirectTo");
@@ -51,22 +102,31 @@ export async function signUpAction(
     return { status: "error", message: parsed.error.issues[0].message };
   }
 
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.signUp({
-    email: parsed.data.email,
-    password: parsed.data.password,
-    options: {
-      data: { full_name: parsed.data.fullName },
-      emailRedirectTo: `${getSiteUrl()}/auth/callback`,
-    },
-  });
-
-  if (error) {
-    return { status: "error", message: error.message };
+  const configError = getSupabaseConfigErrorMessage();
+  if (configError) {
+    return { status: "error", message: configError };
   }
 
-  if (data.session) {
-    redirect("/dashboard");
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.auth.signUp({
+      email: parsed.data.email,
+      password: parsed.data.password,
+      options: {
+        data: { full_name: parsed.data.fullName },
+        emailRedirectTo: `${getSiteUrl()}/auth/callback`,
+      },
+    });
+
+    if (error) {
+      return { status: "error", message: getAuthErrorMessage(error) };
+    }
+
+    if (data.session) {
+      redirect("/dashboard");
+    }
+  } catch (error) {
+    return { status: "error", message: getAuthErrorMessage(error) };
   }
 
   return {
@@ -85,10 +145,23 @@ export async function forgotPasswordAction(
     return { status: "error", message: parsed.error.issues[0].message };
   }
 
-  const supabase = await createClient();
-  await supabase.auth.resetPasswordForEmail(parsed.data.email, {
-    redirectTo: `${getSiteUrl()}/auth/callback?next=/reset-password`,
-  });
+  const configError = getSupabaseConfigErrorMessage();
+  if (configError) {
+    return { status: "error", message: configError };
+  }
+
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
+      redirectTo: `${getSiteUrl()}/auth/callback?next=/reset-password`,
+    });
+
+    if (error) {
+      return { status: "error", message: getAuthErrorMessage(error) };
+    }
+  } catch (error) {
+    return { status: "error", message: getAuthErrorMessage(error) };
+  }
 
   // Always return a generic message so we don't reveal whether an account exists.
   return {
@@ -110,11 +183,20 @@ export async function resetPasswordAction(
     return { status: "error", message: parsed.error.issues[0].message };
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
+  const configError = getSupabaseConfigErrorMessage();
+  if (configError) {
+    return { status: "error", message: configError };
+  }
 
-  if (error) {
-    return { status: "error", message: error.message };
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
+
+    if (error) {
+      return { status: "error", message: getAuthErrorMessage(error) };
+    }
+  } catch (error) {
+    return { status: "error", message: getAuthErrorMessage(error) };
   }
 
   redirect("/dashboard");
