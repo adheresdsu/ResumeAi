@@ -6,3 +6,7 @@ tsconfig.tsbuildinfo
 .env
 .env.*
 !.env.example
+
+# Supabase local generated files
+supabase/.temp/
+supabase/.branches/

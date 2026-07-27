@@ -89,6 +89,16 @@ create policy "plan_limits are publicly readable"
   on public.plan_limits for select
   using (true);
 
+-- Seed the minimum valid 'free' plan row so the subscriptions.plan FK
+-- (default 'free') resolves on a fresh project.
+-- NOTE: these limits are MVP defaults only — revisit before launch.
+insert into public.plan_limits (
+  plan, max_resumes, max_ai_generations_per_month,
+  custom_domain_allowed, premium_templates_allowed
+)
+values ('free', 1, 3, false, false)
+on conflict (plan) do nothing;
+
 -- ---------------------------------------------------------------------------
 -- subscriptions: Stripe billing state (1:1 with a user)
 -- ---------------------------------------------------------------------------
@@ -253,6 +263,41 @@ create trigger set_portfolios_updated_at
   for each row execute function public.set_updated_at();
 
 create index portfolios_user_id_idx on public.portfolios (user_id);
+
+-- ---------------------------------------------------------------------------
+-- Public read access for content rendered on a published portfolio
+-- (portfolios must exist before this policy can reference it)
+-- ---------------------------------------------------------------------------
+create policy "resume_versions are publicly readable via published portfolio"
+  on public.resume_versions for select
+  using (
+    exists (
+      select 1 from public.portfolios
+      where portfolios.resume_version_id = resume_versions.id
+        and portfolios.is_published = true
+    )
+  );
+
+-- public_portfolio_profiles: minimal, safe profile projection for rendering
+-- published portfolios. profiles itself stays owner-only (no public policy
+-- on public.profiles) — this view exposes only id/full_name/avatar_url/
+-- headline, and only for users with at least one published portfolio.
+create view public.public_portfolio_profiles
+with (security_barrier = true) as
+select
+  profiles.id,
+  profiles.full_name,
+  profiles.avatar_url,
+  profiles.headline
+from public.profiles
+where exists (
+  select 1 from public.portfolios
+  where portfolios.user_id = profiles.id
+    and portfolios.is_published = true
+);
+
+revoke all on public.public_portfolio_profiles from public;
+grant select on public.public_portfolio_profiles to anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- uploaded_files: raw resume uploads pending parsing
