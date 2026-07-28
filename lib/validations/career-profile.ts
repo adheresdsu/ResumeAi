@@ -100,6 +100,79 @@ export const skillSchema = z.object({
 
 export type SkillInput = z.infer<typeof skillSchema>;
 
+const PROJECT_NAME_MAX_LENGTH = 200;
+const PROJECT_DESCRIPTION_MAX_LENGTH = 2000;
+const PROJECT_URL_MAX_LENGTH = 2048;
+const PROJECT_BULLET_CONTENT_MAX_LENGTH = 500;
+
+const optionalUrl = z
+  .string()
+  .trim()
+  .max(PROJECT_URL_MAX_LENGTH, `URL must be ${PROJECT_URL_MAX_LENGTH} characters or fewer.`)
+  .optional()
+  .transform((value) => (value ? value : null))
+  .refine((value) => value === null || z.url().safeParse(value).success, {
+    message: "Enter a valid URL.",
+  });
+
+export const projectSchema = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(1, "Enter a project name.")
+      .max(PROJECT_NAME_MAX_LENGTH, `Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer.`),
+    description: optionalTrimmedString.pipe(
+      z
+        .string()
+        .max(
+          PROJECT_DESCRIPTION_MAX_LENGTH,
+          `Description must be ${PROJECT_DESCRIPTION_MAX_LENGTH} characters or fewer.`,
+        )
+        .nullable(),
+    ),
+    url: optionalUrl,
+    startDate: z
+      .string()
+      .trim()
+      .optional()
+      .transform((value) => (value ? value : null))
+      .refine(
+        (value) => value === null || /^\d{4}-\d{2}-\d{2}$/.test(value),
+        "Enter a valid start date.",
+      ),
+    endDate: z
+      .string()
+      .trim()
+      .optional()
+      .transform((value) => (value ? value : null))
+      .refine(
+        (value) => value === null || /^\d{4}-\d{2}-\d{2}$/.test(value),
+        "Enter a valid end date.",
+      ),
+  })
+  .refine(
+    (data) =>
+      data.startDate === null || data.endDate === null || data.endDate >= data.startDate,
+    { message: "End date cannot be before start date.", path: ["endDate"] },
+  );
+
+export type ProjectInput = z.infer<typeof projectSchema>;
+
+export const projectBulletSchema = z.object({
+  content: z
+    .string()
+    .trim()
+    .min(1, "Bullet content cannot be empty.")
+    .max(
+      PROJECT_BULLET_CONTENT_MAX_LENGTH,
+      `Bullet content must be ${PROJECT_BULLET_CONTENT_MAX_LENGTH} characters or fewer.`,
+    ),
+  sortOrder: z.coerce.number().int().min(0).default(0),
+});
+
+export type ProjectBulletInput = z.infer<typeof projectBulletSchema>;
+
 export interface CareerProfileActionState {
   status: "idle" | "error" | "success";
   message: string | null;

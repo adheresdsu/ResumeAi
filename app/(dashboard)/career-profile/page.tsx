@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { Reveal } from "@/components/motion/reveal";
 import { EducationList } from "@/components/career-profile/education-list";
+import { ProjectList } from "@/components/career-profile/project-list";
 import { SkillList } from "@/components/career-profile/skill-list";
 import { WorkExperienceList } from "@/components/career-profile/work-experience-list";
 import { createClient } from "@/lib/supabase/server";
@@ -41,6 +42,16 @@ export default async function CareerProfilePage() {
     throw new Error(educationError.message);
   }
 
+  const { data: projects, error: projectsError } = await supabase
+    .from("projects")
+    .select("*, project_bullets(*)")
+    .eq("user_id", user.id)
+    .order("start_date", { ascending: false });
+
+  if (projectsError) {
+    throw new Error(projectsError.message);
+  }
+
   const { data: profileSkills, error: skillsError } = await supabase
     .from("profile_skills")
     .select("id, verification_status, skills(id, name)")
@@ -69,6 +80,11 @@ export default async function CareerProfilePage() {
       <section className="grid gap-4">
         <h2 className="text-lg font-semibold tracking-tight">Education</h2>
         <EducationList education={education ?? []} />
+      </section>
+
+      <section className="grid gap-4">
+        <h2 className="text-lg font-semibold tracking-tight">Projects</h2>
+        <ProjectList projects={projects ?? []} />
       </section>
 
       <section className="grid gap-4">

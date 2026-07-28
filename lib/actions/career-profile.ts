@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 import type { CareerProfileActionState } from "@/lib/validations/career-profile";
 import {
   educationSchema,
+  projectBulletSchema,
+  projectSchema,
   skillSchema,
   workExperienceBulletSchema,
   workExperienceSchema,
@@ -63,6 +65,36 @@ async function getOwnedBulletWorkExperienceId(
     .maybeSingle();
 
   return data?.work_experience_id ?? null;
+}
+
+async function verifyProjectOwnership(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  projectId: string,
+  userId: string,
+): Promise<boolean> {
+  const { data } = await supabase
+    .from("projects")
+    .select("id")
+    .eq("id", projectId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  return Boolean(data);
+}
+
+async function getOwnedProjectBulletProjectId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  bulletId: string,
+  userId: string,
+): Promise<string | null> {
+  const { data } = await supabase
+    .from("project_bullets")
+    .select("project_id, projects!inner(user_id)")
+    .eq("id", bulletId)
+    .eq("projects.user_id", userId)
+    .maybeSingle();
+
+  return data?.project_id ?? null;
 }
 
 function parseWorkExperienceFormData(formData: FormData) {
@@ -301,6 +333,308 @@ export async function deleteEducationAction(formData: FormData): Promise<void> {
 
   if (error) {
     throw new Error(getErrorMessage(error));
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+}
+
+function parseProjectFormData(formData: FormData) {
+  return projectSchema.safeParse({
+    name: formData.get("name"),
+    description: formData.get("description"),
+    url: formData.get("url"),
+    startDate: formData.get("startDate"),
+    endDate: formData.get("endDate"),
+  });
+}
+
+export async function createProjectAction(
+  _prevState: CareerProfileActionState,
+  formData: FormData,
+): Promise<CareerProfileActionState> {
+  const parsed = parseProjectFormData(formData);
+
+  if (!parsed.success) {
+    return { status: "error", message: parsed.error.issues[0].message };
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    return { status: "error", message: "You must be signed in." };
+  }
+
+  const { supabase, userId } = auth;
+  const { error } = await supabase.from("projects").insert({
+    user_id: userId,
+    name: parsed.data.name,
+    description: parsed.data.description,
+    url: parsed.data.url,
+    start_date: parsed.data.startDate,
+    end_date: parsed.data.endDate,
+    verification_status: "user_confirmed",
+  });
+
+  if (error) {
+    return { status: "error", message: getErrorMessage(error) };
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+  return { status: "success", message: "Project added." };
+}
+
+export async function updateProjectAction(
+  _prevState: CareerProfileActionState,
+  formData: FormData,
+): Promise<CareerProfileActionState> {
+  const id = formData.get("id");
+  if (typeof id !== "string" || !id) {
+    return { status: "error", message: "Missing project id." };
+  }
+
+  const parsed = parseProjectFormData(formData);
+  if (!parsed.success) {
+    return { status: "error", message: parsed.error.issues[0].message };
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    return { status: "error", message: "You must be signed in." };
+  }
+
+  const { supabase, userId } = auth;
+  const { error } = await supabase
+    .from("projects")
+    .update({
+      name: parsed.data.name,
+      description: parsed.data.description,
+      url: parsed.data.url,
+      start_date: parsed.data.startDate,
+      end_date: parsed.data.endDate,
+      verification_status: "user_edited",
+    })
+    .eq("id", id)
+    .eq("user_id", userId);
+
+  if (error) {
+    return { status: "error", message: getErrorMessage(error) };
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+  return { status: "success", message: "Project updated." };
+}
+
+export async function deleteProjectAction(formData: FormData): Promise<void> {
+  const id = formData.get("id");
+  if (typeof id !== "string" || !id) {
+    throw new Error("Missing project id.");
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    throw new Error("You must be signed in.");
+  }
+
+  const { supabase, userId } = auth;
+  const { error } = await supabase.from("projects").delete().eq("id", id).eq("user_id", userId);
+
+  if (error) {
+    throw new Error(getErrorMessage(error));
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+}
+
+export async function createProjectBulletAction(
+  _prevState: CareerProfileActionState,
+  formData: FormData,
+): Promise<CareerProfileActionState> {
+  const projectId = formData.get("projectId");
+  if (typeof projectId !== "string" || !projectId) {
+    return { status: "error", message: "Missing project id." };
+  }
+
+  const parsed = projectBulletSchema.safeParse({
+    content: formData.get("content"),
+    sortOrder: formData.get("sortOrder") ?? 0,
+  });
+
+  if (!parsed.success) {
+    return { status: "error", message: parsed.error.issues[0].message };
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    return { status: "error", message: "You must be signed in." };
+  }
+
+  const { supabase, userId } = auth;
+  const owned = await verifyProjectOwnership(supabase, projectId, userId);
+  if (!owned) {
+    return { status: "error", message: "Project not found." };
+  }
+
+  const { data: lastBullet, error: lastBulletError } = await supabase
+    .from("project_bullets")
+    .select("sort_order")
+    .eq("project_id", projectId)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (lastBulletError) {
+    return { status: "error", message: getErrorMessage(lastBulletError) };
+  }
+
+  const nextSortOrder = (lastBullet?.sort_order ?? -1) + 1;
+
+  const { error } = await supabase.from("project_bullets").insert({
+    project_id: projectId,
+    content: parsed.data.content,
+    sort_order: nextSortOrder,
+    verification_status: "user_confirmed",
+  });
+
+  if (error) {
+    return { status: "error", message: getErrorMessage(error) };
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+  return { status: "success", message: "Bullet added." };
+}
+
+export async function updateProjectBulletAction(
+  _prevState: CareerProfileActionState,
+  formData: FormData,
+): Promise<CareerProfileActionState> {
+  const id = formData.get("id");
+  if (typeof id !== "string" || !id) {
+    return { status: "error", message: "Missing bullet id." };
+  }
+
+  const parsed = projectBulletSchema.safeParse({
+    content: formData.get("content"),
+    sortOrder: formData.get("sortOrder") ?? 0,
+  });
+
+  if (!parsed.success) {
+    return { status: "error", message: parsed.error.issues[0].message };
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    return { status: "error", message: "You must be signed in." };
+  }
+
+  const { supabase, userId } = auth;
+  const ownedProjectId = await getOwnedProjectBulletProjectId(supabase, id, userId);
+  if (!ownedProjectId) {
+    return { status: "error", message: "Bullet not found." };
+  }
+
+  const { error } = await supabase
+    .from("project_bullets")
+    .update({
+      content: parsed.data.content,
+      verification_status: "user_edited",
+    })
+    .eq("id", id);
+
+  if (error) {
+    return { status: "error", message: getErrorMessage(error) };
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+  return { status: "success", message: "Bullet updated." };
+}
+
+export async function deleteProjectBulletAction(formData: FormData): Promise<void> {
+  const id = formData.get("id");
+  if (typeof id !== "string" || !id) {
+    throw new Error("Missing bullet id.");
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    throw new Error("You must be signed in.");
+  }
+
+  const { supabase, userId } = auth;
+  const ownedProjectId = await getOwnedProjectBulletProjectId(supabase, id, userId);
+  if (!ownedProjectId) {
+    throw new Error("Bullet not found.");
+  }
+
+  const { error } = await supabase.from("project_bullets").delete().eq("id", id);
+
+  if (error) {
+    throw new Error(getErrorMessage(error));
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+}
+
+export async function moveProjectBulletAction(formData: FormData): Promise<void> {
+  const id = formData.get("id");
+  const projectId = formData.get("projectId");
+  const direction = formData.get("direction");
+
+  if (
+    typeof id !== "string" ||
+    !id ||
+    typeof projectId !== "string" ||
+    !projectId ||
+    (direction !== "up" && direction !== "down")
+  ) {
+    throw new Error("Invalid reorder request.");
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    throw new Error("You must be signed in.");
+  }
+
+  const { supabase, userId } = auth;
+  const owned = await verifyProjectOwnership(supabase, projectId, userId);
+  if (!owned) {
+    throw new Error("Project not found.");
+  }
+
+  const { data: bullets, error: fetchError } = await supabase
+    .from("project_bullets")
+    .select("id, sort_order")
+    .eq("project_id", projectId)
+    .order("sort_order", { ascending: true });
+
+  if (fetchError) {
+    throw new Error(getErrorMessage(fetchError));
+  }
+
+  const currentIndex = (bullets ?? []).findIndex((bullet) => bullet.id === id);
+  if (currentIndex === -1) {
+    throw new Error("Bullet not found.");
+  }
+
+  const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+  if (targetIndex < 0 || targetIndex >= (bullets ?? []).length) {
+    return;
+  }
+
+  const current = bullets![currentIndex];
+  const target = bullets![targetIndex];
+
+  const [{ error: firstError }, { error: secondError }] = await Promise.all([
+    supabase
+      .from("project_bullets")
+      .update({ sort_order: target.sort_order })
+      .eq("id", current.id),
+    supabase
+      .from("project_bullets")
+      .update({ sort_order: current.sort_order })
+      .eq("id", target.id),
+  ]);
+
+  if (firstError || secondError) {
+    throw new Error(getErrorMessage(firstError ?? secondError));
   }
 
   revalidatePath(CAREER_PROFILE_PATH);
