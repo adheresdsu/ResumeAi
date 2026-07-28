@@ -6,6 +6,7 @@ import { EducationList } from "@/components/career-profile/education-list";
 import { ProfileLinkList } from "@/components/career-profile/profile-link-list";
 import { ProjectList } from "@/components/career-profile/project-list";
 import { SkillList } from "@/components/career-profile/skill-list";
+import { UploadedFileList } from "@/components/career-profile/uploaded-file-list";
 import { WorkExperienceList } from "@/components/career-profile/work-experience-list";
 import { createClient } from "@/lib/supabase/server";
 
@@ -73,6 +74,16 @@ export default async function CareerProfilePage() {
     throw new Error(profileLinksError.message);
   }
 
+  const { data: uploadedFiles, error: uploadedFilesError } = await supabase
+    .from("uploaded_files")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+
+  if (uploadedFilesError) {
+    throw new Error(uploadedFilesError.message);
+  }
+
   return (
     <div className="grid max-w-3xl gap-6">
       <Reveal>
@@ -106,6 +117,11 @@ export default async function CareerProfilePage() {
       <section className="grid gap-4">
         <h2 className="text-lg font-semibold tracking-tight">Links</h2>
         <ProfileLinkList links={profileLinks ?? []} />
+      </section>
+
+      <section className="grid gap-4">
+        <h2 className="text-lg font-semibold tracking-tight">Uploaded files</h2>
+        <UploadedFileList files={uploadedFiles ?? []} />
       </section>
     </div>
   );

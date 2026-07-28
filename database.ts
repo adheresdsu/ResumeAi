@@ -654,27 +654,36 @@ export type Database = {
       uploaded_files: {
         Row: {
           created_at: string
+          file_name: string
+          file_size: number
           file_type: string
           id: string
           linked_resume_id: string | null
+          mime_type: string | null
           parsed_status: string
           storage_path: string
           user_id: string
         }
         Insert: {
           created_at?: string
+          file_name?: string
+          file_size?: number
           file_type: string
           id?: string
           linked_resume_id?: string | null
+          mime_type?: string | null
           parsed_status?: string
           storage_path: string
           user_id: string
         }
         Update: {
           created_at?: string
+          file_name?: string
+          file_size?: number
           file_type?: string
           id?: string
           linked_resume_id?: string | null
+          mime_type?: string | null
           parsed_status?: string
           storage_path?: string
           user_id?: string

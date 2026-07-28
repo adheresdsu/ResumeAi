@@ -13,6 +13,9 @@ import {
   workExperienceBulletSchema,
   workExperienceSchema,
 } from "@/lib/validations/career-profile";
+import { validateUploadedFile } from "@/lib/validations/uploaded-file";
+
+const RESUME_UPLOADS_BUCKET = "resume-uploads";
 
 const CAREER_PROFILE_PATH = "/career-profile";
 
@@ -651,6 +654,110 @@ export async function moveProjectBulletAction(formData: FormData): Promise<void>
 
   if (firstError || secondError) {
     throw new Error(getErrorMessage(firstError ?? secondError));
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+}
+
+async function getOwnedUploadedFileStoragePath(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  fileId: string,
+  userId: string,
+): Promise<string | null> {
+  const { data } = await supabase
+    .from("uploaded_files")
+    .select("storage_path")
+    .eq("id", fileId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  return data?.storage_path ?? null;
+}
+
+export async function uploadFileAction(
+  _prevState: CareerProfileActionState,
+  formData: FormData,
+): Promise<CareerProfileActionState> {
+  const file = formData.get("file");
+  if (!(file instanceof File)) {
+    return { status: "error", message: "Select a file to upload." };
+  }
+
+  const validation = validateUploadedFile(file);
+  if (!validation.success) {
+    return { status: "error", message: validation.message };
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    return { status: "error", message: "You must be signed in." };
+  }
+
+  const { supabase, userId } = auth;
+  const storagePath = `${userId}/${crypto.randomUUID()}.${validation.fileType}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(RESUME_UPLOADS_BUCKET)
+    .upload(storagePath, file, {
+      contentType: file.type,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    return { status: "error", message: getErrorMessage(uploadError) };
+  }
+
+  const { error: insertError } = await supabase.from("uploaded_files").insert({
+    user_id: userId,
+    storage_path: storagePath,
+    file_name: file.name,
+    file_size: file.size,
+    file_type: validation.fileType,
+    mime_type: file.type,
+  });
+
+  if (insertError) {
+    await supabase.storage.from(RESUME_UPLOADS_BUCKET).remove([storagePath]);
+    return { status: "error", message: getErrorMessage(insertError) };
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+  return { status: "success", message: "File uploaded." };
+}
+
+export async function deleteUploadedFileAction(formData: FormData): Promise<void> {
+  const id = formData.get("id");
+  if (typeof id !== "string" || !id) {
+    throw new Error("Missing file id.");
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    throw new Error("You must be signed in.");
+  }
+
+  const { supabase, userId } = auth;
+  const storagePath = await getOwnedUploadedFileStoragePath(supabase, id, userId);
+  if (!storagePath) {
+    throw new Error("File not found.");
+  }
+
+  const { error: storageError } = await supabase.storage
+    .from(RESUME_UPLOADS_BUCKET)
+    .remove([storagePath]);
+
+  if (storageError) {
+    throw new Error(getErrorMessage(storageError));
+  }
+
+  const { error: deleteError } = await supabase
+    .from("uploaded_files")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+
+  if (deleteError) {
+    throw new Error(getErrorMessage(deleteError));
   }
 
   revalidatePath(CAREER_PROFILE_PATH);
