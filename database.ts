@@ -654,6 +654,9 @@ export type Database = {
       uploaded_files: {
         Row: {
           created_at: string
+          extracted_at: string | null
+          extracted_text: string | null
+          extraction_error: string | null
           file_name: string
           file_size: number
           file_type: string
@@ -666,6 +669,9 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          extracted_at?: string | null
+          extracted_text?: string | null
+          extraction_error?: string | null
           file_name?: string
           file_size?: number
           file_type: string
@@ -678,6 +684,9 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          extracted_at?: string | null
+          extracted_text?: string | null
+          extraction_error?: string | null
           file_name?: string
           file_size?: number
           file_type?: string

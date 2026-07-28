@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { extractTextFromFile, TextExtractionError } from "@/lib/file-extraction";
 import { createClient } from "@/lib/supabase/server";
 import type { CareerProfileActionState } from "@/lib/validations/career-profile";
 import {
@@ -13,7 +14,11 @@ import {
   workExperienceBulletSchema,
   workExperienceSchema,
 } from "@/lib/validations/career-profile";
-import { validateUploadedFile } from "@/lib/validations/uploaded-file";
+import {
+  UPLOADED_FILE_MAX_SIZE_BYTES,
+  validateUploadedFile,
+  type UploadedFileType,
+} from "@/lib/validations/uploaded-file";
 
 const RESUME_UPLOADS_BUCKET = "resume-uploads";
 
@@ -758,6 +763,127 @@ export async function deleteUploadedFileAction(formData: FormData): Promise<void
 
   if (deleteError) {
     throw new Error(getErrorMessage(deleteError));
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+}
+
+interface OwnedUploadedFileForExtraction {
+  storagePath: string;
+  fileType: UploadedFileType;
+  fileSize: number;
+}
+
+async function getOwnedUploadedFileForExtraction(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  fileId: string,
+  userId: string,
+): Promise<OwnedUploadedFileForExtraction | null> {
+  const { data } = await supabase
+    .from("uploaded_files")
+    .select("storage_path, file_type, file_size")
+    .eq("id", fileId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!data) {
+    return null;
+  }
+
+  return {
+    storagePath: data.storage_path,
+    fileType: data.file_type as UploadedFileType,
+    fileSize: data.file_size,
+  };
+}
+
+async function markUploadedFileExtractionFailed(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  fileId: string,
+  userId: string,
+  message: string,
+): Promise<void> {
+  await supabase
+    .from("uploaded_files")
+    .update({
+      parsed_status: "failed",
+      extracted_text: null,
+      extraction_error: message,
+    })
+    .eq("id", fileId)
+    .eq("user_id", userId);
+
+  revalidatePath(CAREER_PROFILE_PATH);
+}
+
+const GENERIC_EXTRACTION_FAILURE_MESSAGE =
+  "Extraction failed. The file may be corrupted, empty or unsupported.";
+
+export async function extractUploadedFileAction(formData: FormData): Promise<void> {
+  const id = formData.get("id");
+  if (typeof id !== "string" || !id) {
+    throw new Error("Missing file id.");
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    throw new Error("You must be signed in.");
+  }
+
+  const { supabase, userId } = auth;
+  const uploadedFile = await getOwnedUploadedFileForExtraction(supabase, id, userId);
+  if (!uploadedFile) {
+    throw new Error("File not found.");
+  }
+
+  if (uploadedFile.fileSize > UPLOADED_FILE_MAX_SIZE_BYTES) {
+    await markUploadedFileExtractionFailed(
+      supabase,
+      id,
+      userId,
+      "File exceeds the 10 MB extraction limit.",
+    );
+    return;
+  }
+
+  const { data: blob, error: downloadError } = await supabase.storage
+    .from(RESUME_UPLOADS_BUCKET)
+    .download(uploadedFile.storagePath);
+
+  if (downloadError || !blob) {
+    await markUploadedFileExtractionFailed(
+      supabase,
+      id,
+      userId,
+      "Could not download the file for extraction.",
+    );
+    return;
+  }
+
+  const buffer = Buffer.from(await blob.arrayBuffer());
+
+  try {
+    const extractedText = await extractTextFromFile(uploadedFile.fileType, buffer);
+
+    const { error: updateError } = await supabase
+      .from("uploaded_files")
+      .update({
+        parsed_status: "parsed",
+        extracted_text: extractedText,
+        extraction_error: null,
+        extracted_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .eq("user_id", userId);
+
+    if (updateError) {
+      throw new Error(getErrorMessage(updateError));
+    }
+  } catch (error: unknown) {
+    const message =
+      error instanceof TextExtractionError ? error.message : GENERIC_EXTRACTION_FAILURE_MESSAGE;
+    await markUploadedFileExtractionFailed(supabase, id, userId, message);
+    return;
   }
 
   revalidatePath(CAREER_PROFILE_PATH);
