@@ -149,11 +149,15 @@ export type Database = {
         Row: {
           created_at: string
           degree: string | null
+          description: string | null
+          display_order: number
           end_date: string | null
           evidence_source_id: string | null
           field_of_study: string | null
           id: string
           institution: string
+          is_current: boolean
+          location: string | null
           start_date: string | null
           updated_at: string
           user_id: string
@@ -162,11 +166,15 @@ export type Database = {
         Insert: {
           created_at?: string
           degree?: string | null
+          description?: string | null
+          display_order?: number
           end_date?: string | null
           evidence_source_id?: string | null
           field_of_study?: string | null
           id?: string
           institution: string
+          is_current?: boolean
+          location?: string | null
           start_date?: string | null
           updated_at?: string
           user_id: string
@@ -175,11 +183,15 @@ export type Database = {
         Update: {
           created_at?: string
           degree?: string | null
+          description?: string | null
+          display_order?: number
           end_date?: string | null
           evidence_source_id?: string | null
           field_of_study?: string | null
           id?: string
           institution?: string
+          is_current?: boolean
+          location?: string | null
           start_date?: string | null
           updated_at?: string
           user_id?: string

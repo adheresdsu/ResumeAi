@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { Reveal } from "@/components/motion/reveal";
+import { EducationList } from "@/components/career-profile/education-list";
 import { WorkExperienceList } from "@/components/career-profile/work-experience-list";
 import { createClient } from "@/lib/supabase/server";
 
@@ -28,16 +29,36 @@ export default async function CareerProfilePage() {
     throw new Error(error.message);
   }
 
+  const { data: education, error: educationError } = await supabase
+    .from("education")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("display_order", { ascending: true })
+    .order("start_date", { ascending: false });
+
+  if (educationError) {
+    throw new Error(educationError.message);
+  }
+
   return (
     <div className="grid max-w-3xl gap-6">
       <Reveal>
         <h1 className="text-2xl font-semibold tracking-tight">Career Profile</h1>
         <p className="text-muted-foreground">
-          Manage your work experience. This is the source of truth used to build resumes.
+          Manage your work experience and education. This is the source of truth used to build
+          resumes.
         </p>
       </Reveal>
 
-      <WorkExperienceList workExperiences={workExperiences ?? []} />
+      <section className="grid gap-4">
+        <h2 className="text-lg font-semibold tracking-tight">Work experience</h2>
+        <WorkExperienceList workExperiences={workExperiences ?? []} />
+      </section>
+
+      <section className="grid gap-4">
+        <h2 className="text-lg font-semibold tracking-tight">Education</h2>
+        <EducationList education={education ?? []} />
+      </section>
     </div>
   );
 }

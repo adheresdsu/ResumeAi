@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { CareerProfileActionState } from "@/lib/validations/career-profile";
 import {
+  educationSchema,
   workExperienceBulletSchema,
   workExperienceSchema,
 } from "@/lib/validations/career-profile";
@@ -171,6 +172,128 @@ export async function deleteWorkExperienceAction(formData: FormData): Promise<vo
   const { supabase, userId } = auth;
   const { error } = await supabase
     .from("work_experiences")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+
+  if (error) {
+    throw new Error(getErrorMessage(error));
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+}
+
+function parseEducationFormData(formData: FormData) {
+  return educationSchema.safeParse({
+    institution: formData.get("institution"),
+    degree: formData.get("degree"),
+    fieldOfStudy: formData.get("fieldOfStudy"),
+    location: formData.get("location"),
+    startDate: formData.get("startDate"),
+    endDate: formData.get("endDate"),
+    isCurrent: formData.get("isCurrent") === "on",
+    description: formData.get("description"),
+    displayOrder: formData.get("displayOrder") ?? 0,
+  });
+}
+
+export async function createEducationAction(
+  _prevState: CareerProfileActionState,
+  formData: FormData,
+): Promise<CareerProfileActionState> {
+  const parsed = parseEducationFormData(formData);
+
+  if (!parsed.success) {
+    return { status: "error", message: parsed.error.issues[0].message };
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    return { status: "error", message: "You must be signed in." };
+  }
+
+  const { supabase, userId } = auth;
+  const { error } = await supabase.from("education").insert({
+    user_id: userId,
+    institution: parsed.data.institution,
+    degree: parsed.data.degree,
+    field_of_study: parsed.data.fieldOfStudy,
+    location: parsed.data.location,
+    start_date: parsed.data.startDate,
+    end_date: parsed.data.endDate,
+    is_current: parsed.data.isCurrent,
+    description: parsed.data.description,
+    display_order: parsed.data.displayOrder,
+    verification_status: "user_confirmed",
+  });
+
+  if (error) {
+    return { status: "error", message: getErrorMessage(error) };
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+  return { status: "success", message: "Education added." };
+}
+
+export async function updateEducationAction(
+  _prevState: CareerProfileActionState,
+  formData: FormData,
+): Promise<CareerProfileActionState> {
+  const id = formData.get("id");
+  if (typeof id !== "string" || !id) {
+    return { status: "error", message: "Missing education id." };
+  }
+
+  const parsed = parseEducationFormData(formData);
+  if (!parsed.success) {
+    return { status: "error", message: parsed.error.issues[0].message };
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    return { status: "error", message: "You must be signed in." };
+  }
+
+  const { supabase, userId } = auth;
+  const { error } = await supabase
+    .from("education")
+    .update({
+      institution: parsed.data.institution,
+      degree: parsed.data.degree,
+      field_of_study: parsed.data.fieldOfStudy,
+      location: parsed.data.location,
+      start_date: parsed.data.startDate,
+      end_date: parsed.data.endDate,
+      is_current: parsed.data.isCurrent,
+      description: parsed.data.description,
+      display_order: parsed.data.displayOrder,
+      verification_status: "user_edited",
+    })
+    .eq("id", id)
+    .eq("user_id", userId);
+
+  if (error) {
+    return { status: "error", message: getErrorMessage(error) };
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+  return { status: "success", message: "Education updated." };
+}
+
+export async function deleteEducationAction(formData: FormData): Promise<void> {
+  const id = formData.get("id");
+  if (typeof id !== "string" || !id) {
+    throw new Error("Missing education id.");
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    throw new Error("You must be signed in.");
+  }
+
+  const { supabase, userId } = auth;
+  const { error } = await supabase
+    .from("education")
     .delete()
     .eq("id", id)
     .eq("user_id", userId);
