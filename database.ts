@@ -729,6 +729,8 @@ export type Database = {
         Row: {
           company: string
           created_at: string
+          description: string | null
+          display_order: number
           end_date: string | null
           evidence_source_id: string | null
           id: string
@@ -743,6 +745,8 @@ export type Database = {
         Insert: {
           company: string
           created_at?: string
+          description?: string | null
+          display_order?: number
           end_date?: string | null
           evidence_source_id?: string | null
           id?: string
@@ -757,6 +761,8 @@ export type Database = {
         Update: {
           company?: string
           created_at?: string
+          description?: string | null
+          display_order?: number
           end_date?: string | null
           evidence_source_id?: string | null
           id?: string
