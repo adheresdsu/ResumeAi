@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { Reveal } from "@/components/motion/reveal";
 import { EducationList } from "@/components/career-profile/education-list";
+import { ProfileLinkList } from "@/components/career-profile/profile-link-list";
 import { ProjectList } from "@/components/career-profile/project-list";
 import { SkillList } from "@/components/career-profile/skill-list";
 import { WorkExperienceList } from "@/components/career-profile/work-experience-list";
@@ -62,6 +63,16 @@ export default async function CareerProfilePage() {
     throw new Error(skillsError.message);
   }
 
+  const { data: profileLinks, error: profileLinksError } = await supabase
+    .from("profile_links")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("sort_order", { ascending: true });
+
+  if (profileLinksError) {
+    throw new Error(profileLinksError.message);
+  }
+
   return (
     <div className="grid max-w-3xl gap-6">
       <Reveal>
@@ -90,6 +101,11 @@ export default async function CareerProfilePage() {
       <section className="grid gap-4">
         <h2 className="text-lg font-semibold tracking-tight">Skills</h2>
         <SkillList skills={profileSkills ?? []} />
+      </section>
+
+      <section className="grid gap-4">
+        <h2 className="text-lg font-semibold tracking-tight">Links</h2>
+        <ProfileLinkList links={profileLinks ?? []} />
       </section>
     </div>
   );

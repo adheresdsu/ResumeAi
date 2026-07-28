@@ -173,6 +173,26 @@ export const projectBulletSchema = z.object({
 
 export type ProjectBulletInput = z.infer<typeof projectBulletSchema>;
 
+const PROFILE_LINK_LABEL_MAX_LENGTH = 100;
+const PROFILE_LINK_URL_MAX_LENGTH = 2048;
+
+export const profileLinkSchema = z.object({
+  label: z
+    .string()
+    .trim()
+    .min(1, "Enter a label.")
+    .max(PROFILE_LINK_LABEL_MAX_LENGTH, `Label must be ${PROFILE_LINK_LABEL_MAX_LENGTH} characters or fewer.`),
+  url: z
+    .string()
+    .trim()
+    .min(1, "Enter a URL.")
+    .max(PROFILE_LINK_URL_MAX_LENGTH, `URL must be ${PROFILE_LINK_URL_MAX_LENGTH} characters or fewer.`)
+    .refine((value) => z.url().safeParse(value).success, "Enter a valid URL."),
+  sortOrder: z.coerce.number().int().min(0).default(0),
+});
+
+export type ProfileLinkInput = z.infer<typeof profileLinkSchema>;
+
 export interface CareerProfileActionState {
   status: "idle" | "error" | "success";
   message: string | null;

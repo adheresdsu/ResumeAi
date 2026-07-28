@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { CareerProfileActionState } from "@/lib/validations/career-profile";
 import {
   educationSchema,
+  profileLinkSchema,
   projectBulletSchema,
   projectSchema,
   skillSchema,
@@ -65,6 +66,21 @@ async function getOwnedBulletWorkExperienceId(
     .maybeSingle();
 
   return data?.work_experience_id ?? null;
+}
+
+async function verifyProfileLinkOwnership(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  linkId: string,
+  userId: string,
+): Promise<boolean> {
+  const { data } = await supabase
+    .from("profile_links")
+    .select("id")
+    .eq("id", linkId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  return Boolean(data);
 }
 
 async function verifyProjectOwnership(
@@ -1030,6 +1046,194 @@ export async function deleteSkillAction(formData: FormData): Promise<void> {
     if (deleteSkillError) {
       throw new Error(getErrorMessage(deleteSkillError));
     }
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+}
+
+function parseProfileLinkFormData(formData: FormData) {
+  return profileLinkSchema.safeParse({
+    label: formData.get("label"),
+    url: formData.get("url"),
+    sortOrder: formData.get("sortOrder") ?? 0,
+  });
+}
+
+export async function createProfileLinkAction(
+  _prevState: CareerProfileActionState,
+  formData: FormData,
+): Promise<CareerProfileActionState> {
+  const parsed = parseProfileLinkFormData(formData);
+
+  if (!parsed.success) {
+    return { status: "error", message: parsed.error.issues[0].message };
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    return { status: "error", message: "You must be signed in." };
+  }
+
+  const { supabase, userId } = auth;
+
+  const { data: lastLink, error: lastLinkError } = await supabase
+    .from("profile_links")
+    .select("sort_order")
+    .eq("user_id", userId)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (lastLinkError) {
+    return { status: "error", message: getErrorMessage(lastLinkError) };
+  }
+
+  const nextSortOrder = (lastLink?.sort_order ?? -1) + 1;
+
+  const { error } = await supabase.from("profile_links").insert({
+    user_id: userId,
+    label: parsed.data.label,
+    url: parsed.data.url,
+    sort_order: nextSortOrder,
+  });
+
+  if (error) {
+    return { status: "error", message: getErrorMessage(error) };
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+  return { status: "success", message: "Link added." };
+}
+
+export async function updateProfileLinkAction(
+  _prevState: CareerProfileActionState,
+  formData: FormData,
+): Promise<CareerProfileActionState> {
+  const id = formData.get("id");
+  if (typeof id !== "string" || !id) {
+    return { status: "error", message: "Missing link id." };
+  }
+
+  const parsed = parseProfileLinkFormData(formData);
+  if (!parsed.success) {
+    return { status: "error", message: parsed.error.issues[0].message };
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    return { status: "error", message: "You must be signed in." };
+  }
+
+  const { supabase, userId } = auth;
+  const owned = await verifyProfileLinkOwnership(supabase, id, userId);
+  if (!owned) {
+    return { status: "error", message: "Link not found." };
+  }
+
+  const { error } = await supabase
+    .from("profile_links")
+    .update({
+      label: parsed.data.label,
+      url: parsed.data.url,
+    })
+    .eq("id", id)
+    .eq("user_id", userId);
+
+  if (error) {
+    return { status: "error", message: getErrorMessage(error) };
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+  return { status: "success", message: "Link updated." };
+}
+
+export async function deleteProfileLinkAction(formData: FormData): Promise<void> {
+  const id = formData.get("id");
+  if (typeof id !== "string" || !id) {
+    throw new Error("Missing link id.");
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    throw new Error("You must be signed in.");
+  }
+
+  const { supabase, userId } = auth;
+  const owned = await verifyProfileLinkOwnership(supabase, id, userId);
+  if (!owned) {
+    throw new Error("Link not found.");
+  }
+
+  const { error } = await supabase
+    .from("profile_links")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+
+  if (error) {
+    throw new Error(getErrorMessage(error));
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+}
+
+export async function moveProfileLinkAction(formData: FormData): Promise<void> {
+  const id = formData.get("id");
+  const direction = formData.get("direction");
+
+  if (typeof id !== "string" || !id || (direction !== "up" && direction !== "down")) {
+    throw new Error("Invalid reorder request.");
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    throw new Error("You must be signed in.");
+  }
+
+  const { supabase, userId } = auth;
+  const owned = await verifyProfileLinkOwnership(supabase, id, userId);
+  if (!owned) {
+    throw new Error("Link not found.");
+  }
+
+  const { data: links, error: fetchError } = await supabase
+    .from("profile_links")
+    .select("id, sort_order")
+    .eq("user_id", userId)
+    .order("sort_order", { ascending: true });
+
+  if (fetchError) {
+    throw new Error(getErrorMessage(fetchError));
+  }
+
+  const currentIndex = (links ?? []).findIndex((link) => link.id === id);
+  if (currentIndex === -1) {
+    throw new Error("Link not found.");
+  }
+
+  const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+  if (targetIndex < 0 || targetIndex >= (links ?? []).length) {
+    return;
+  }
+
+  const current = links![currentIndex];
+  const target = links![targetIndex];
+
+  const [{ error: firstError }, { error: secondError }] = await Promise.all([
+    supabase
+      .from("profile_links")
+      .update({ sort_order: target.sort_order })
+      .eq("id", current.id)
+      .eq("user_id", userId),
+    supabase
+      .from("profile_links")
+      .update({ sort_order: current.sort_order })
+      .eq("id", target.id)
+      .eq("user_id", userId),
+  ]);
+
+  if (firstError || secondError) {
+    throw new Error(getErrorMessage(firstError ?? secondError));
   }
 
   revalidatePath(CAREER_PROFILE_PATH);
