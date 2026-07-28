@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { CareerProfileActionState } from "@/lib/validations/career-profile";
 import {
   educationSchema,
+  skillSchema,
   workExperienceBulletSchema,
   workExperienceSchema,
 } from "@/lib/validations/career-profile";
@@ -482,6 +483,219 @@ export async function moveWorkExperienceBulletAction(formData: FormData): Promis
 
   if (firstError || secondError) {
     throw new Error(getErrorMessage(firstError ?? secondError));
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+}
+
+const UNIQUE_VIOLATION_CODE = "23505";
+
+async function findOrCreateSkillId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  name: string,
+  normalizedName: string,
+): Promise<{ skillId: string } | { error: string }> {
+  const { data: existing, error: findError } = await supabase
+    .from("skills")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("normalized_name", normalizedName)
+    .maybeSingle();
+
+  if (findError) {
+    return { error: getErrorMessage(findError) };
+  }
+
+  if (existing) {
+    return { skillId: existing.id };
+  }
+
+  const { data: created, error: createError } = await supabase
+    .from("skills")
+    .insert({ user_id: userId, name, normalized_name: normalizedName })
+    .select("id")
+    .single();
+
+  if (createError) {
+    if (createError.code === UNIQUE_VIOLATION_CODE) {
+      const { data: retry, error: retryError } = await supabase
+        .from("skills")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("normalized_name", normalizedName)
+        .maybeSingle();
+
+      if (retry) {
+        return { skillId: retry.id };
+      }
+
+      return { error: getErrorMessage(retryError ?? createError) };
+    }
+
+    return { error: getErrorMessage(createError) };
+  }
+
+  return { skillId: created.id };
+}
+
+export async function createSkillAction(
+  _prevState: CareerProfileActionState,
+  formData: FormData,
+): Promise<CareerProfileActionState> {
+  const parsed = skillSchema.safeParse({ name: formData.get("name") });
+
+  if (!parsed.success) {
+    return { status: "error", message: parsed.error.issues[0].message };
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    return { status: "error", message: "You must be signed in." };
+  }
+
+  const { supabase, userId } = auth;
+  const normalizedName = parsed.data.name.toLowerCase();
+  const skillResult = await findOrCreateSkillId(supabase, userId, parsed.data.name, normalizedName);
+
+  if ("error" in skillResult) {
+    return { status: "error", message: skillResult.error };
+  }
+
+  const { error } = await supabase.from("profile_skills").insert({
+    user_id: userId,
+    skill_id: skillResult.skillId,
+    verification_status: "user_confirmed",
+  });
+
+  if (error) {
+    if (error.code === UNIQUE_VIOLATION_CODE) {
+      return { status: "error", message: "That skill is already on your profile." };
+    }
+    return { status: "error", message: getErrorMessage(error) };
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+  return { status: "success", message: "Skill added." };
+}
+
+export async function updateSkillAction(
+  _prevState: CareerProfileActionState,
+  formData: FormData,
+): Promise<CareerProfileActionState> {
+  const id = formData.get("id");
+  if (typeof id !== "string" || !id) {
+    return { status: "error", message: "Missing skill id." };
+  }
+
+  const parsed = skillSchema.safeParse({ name: formData.get("name") });
+  if (!parsed.success) {
+    return { status: "error", message: parsed.error.issues[0].message };
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    return { status: "error", message: "You must be signed in." };
+  }
+
+  const { supabase, userId } = auth;
+
+  const { data: link } = await supabase
+    .from("profile_skills")
+    .select("skill_id")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!link) {
+    return { status: "error", message: "Skill not found." };
+  }
+
+  const normalizedName = parsed.data.name.toLowerCase();
+
+  const { data: collision } = await supabase
+    .from("skills")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("normalized_name", normalizedName)
+    .neq("id", link.skill_id)
+    .maybeSingle();
+
+  if (collision) {
+    return { status: "error", message: "You already have a skill with that name." };
+  }
+
+  const { error } = await supabase
+    .from("skills")
+    .update({ name: parsed.data.name, normalized_name: normalizedName })
+    .eq("id", link.skill_id)
+    .eq("user_id", userId);
+
+  if (error) {
+    if (error.code === UNIQUE_VIOLATION_CODE) {
+      return { status: "error", message: "You already have a skill with that name." };
+    }
+    return { status: "error", message: getErrorMessage(error) };
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+  return { status: "success", message: "Skill updated." };
+}
+
+export async function deleteSkillAction(formData: FormData): Promise<void> {
+  const id = formData.get("id");
+  if (typeof id !== "string" || !id) {
+    throw new Error("Missing skill id.");
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    throw new Error("You must be signed in.");
+  }
+
+  const { supabase, userId } = auth;
+
+  const { data: link } = await supabase
+    .from("profile_skills")
+    .select("skill_id")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!link) {
+    throw new Error("Skill not found.");
+  }
+
+  const { error: deleteLinkError } = await supabase
+    .from("profile_skills")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+
+  if (deleteLinkError) {
+    throw new Error(getErrorMessage(deleteLinkError));
+  }
+
+  const { data: remainingLinks, error: remainingError } = await supabase
+    .from("profile_skills")
+    .select("id")
+    .eq("skill_id", link.skill_id)
+    .eq("user_id", userId);
+
+  if (remainingError) {
+    throw new Error(getErrorMessage(remainingError));
+  }
+
+  if (!remainingLinks || remainingLinks.length === 0) {
+    const { error: deleteSkillError } = await supabase
+      .from("skills")
+      .delete()
+      .eq("id", link.skill_id)
+      .eq("user_id", userId);
+
+    if (deleteSkillError) {
+      throw new Error(getErrorMessage(deleteSkillError));
+    }
   }
 
   revalidatePath(CAREER_PROFILE_PATH);

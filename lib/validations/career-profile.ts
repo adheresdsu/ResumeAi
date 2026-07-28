@@ -88,6 +88,18 @@ export const workExperienceBulletSchema = z.object({
 
 export type WorkExperienceBulletInput = z.infer<typeof workExperienceBulletSchema>;
 
+const SKILL_NAME_MAX_LENGTH = 100;
+
+export const skillSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "Enter a skill name.")
+    .max(SKILL_NAME_MAX_LENGTH, `Skill name must be ${SKILL_NAME_MAX_LENGTH} characters or fewer.`),
+});
+
+export type SkillInput = z.infer<typeof skillSchema>;
+
 export interface CareerProfileActionState {
   status: "idle" | "error" | "success";
   message: string | null;
