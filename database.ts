@@ -66,6 +66,41 @@ export type Database = {
         }
         Relationships: []
       }
+      career_evidence_sources: {
+        Row: {
+          created_at: string
+          id: string
+          label: string | null
+          source_type: string
+          uploaded_file_id: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          label?: string | null
+          source_type: string
+          uploaded_file_id?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          label?: string | null
+          source_type?: string
+          uploaded_file_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "career_evidence_sources_uploaded_file_id_fkey"
+            columns: ["uploaded_file_id"]
+            isOneToOne: false
+            referencedRelation: "uploaded_files"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cover_letters: {
         Row: {
           company_name: string | null
@@ -106,6 +141,56 @@ export type Database = {
             columns: ["resume_version_id"]
             isOneToOne: false
             referencedRelation: "resume_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      education: {
+        Row: {
+          created_at: string
+          degree: string | null
+          end_date: string | null
+          evidence_source_id: string | null
+          field_of_study: string | null
+          id: string
+          institution: string
+          start_date: string | null
+          updated_at: string
+          user_id: string
+          verification_status: string
+        }
+        Insert: {
+          created_at?: string
+          degree?: string | null
+          end_date?: string | null
+          evidence_source_id?: string | null
+          field_of_study?: string | null
+          id?: string
+          institution: string
+          start_date?: string | null
+          updated_at?: string
+          user_id: string
+          verification_status?: string
+        }
+        Update: {
+          created_at?: string
+          degree?: string | null
+          end_date?: string | null
+          evidence_source_id?: string | null
+          field_of_study?: string | null
+          id?: string
+          institution?: string
+          start_date?: string | null
+          updated_at?: string
+          user_id?: string
+          verification_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "education_evidence_source_id_fkey"
+            columns: ["evidence_source_id"]
+            isOneToOne: false
+            referencedRelation: "career_evidence_sources"
             referencedColumns: ["id"]
           },
         ]
@@ -188,6 +273,81 @@ export type Database = {
           },
         ]
       }
+      profile_links: {
+        Row: {
+          created_at: string
+          id: string
+          label: string
+          sort_order: number
+          updated_at: string
+          url: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          label: string
+          sort_order?: number
+          updated_at?: string
+          url: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          label?: string
+          sort_order?: number
+          updated_at?: string
+          url?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profile_skills: {
+        Row: {
+          created_at: string
+          evidence_source_id: string | null
+          id: string
+          skill_id: string
+          updated_at: string
+          user_id: string
+          verification_status: string
+        }
+        Insert: {
+          created_at?: string
+          evidence_source_id?: string | null
+          id?: string
+          skill_id: string
+          updated_at?: string
+          user_id: string
+          verification_status?: string
+        }
+        Update: {
+          created_at?: string
+          evidence_source_id?: string | null
+          id?: string
+          skill_id?: string
+          updated_at?: string
+          user_id?: string
+          verification_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_skills_evidence_source_id_fkey"
+            columns: ["evidence_source_id"]
+            isOneToOne: false
+            referencedRelation: "career_evidence_sources"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profile_skills_skill_id_user_id_fkey"
+            columns: ["skill_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "skills"
+            referencedColumns: ["id", "user_id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -214,6 +374,104 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      project_bullets: {
+        Row: {
+          content: string
+          created_at: string
+          evidence_source_id: string | null
+          id: string
+          project_id: string
+          sort_order: number
+          updated_at: string
+          verification_status: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          evidence_source_id?: string | null
+          id?: string
+          project_id: string
+          sort_order?: number
+          updated_at?: string
+          verification_status?: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          evidence_source_id?: string | null
+          id?: string
+          project_id?: string
+          sort_order?: number
+          updated_at?: string
+          verification_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_bullets_evidence_source_id_fkey"
+            columns: ["evidence_source_id"]
+            isOneToOne: false
+            referencedRelation: "career_evidence_sources"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_bullets_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      projects: {
+        Row: {
+          created_at: string
+          description: string | null
+          end_date: string | null
+          evidence_source_id: string | null
+          id: string
+          name: string
+          start_date: string | null
+          updated_at: string
+          url: string | null
+          user_id: string
+          verification_status: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          end_date?: string | null
+          evidence_source_id?: string | null
+          id?: string
+          name: string
+          start_date?: string | null
+          updated_at?: string
+          url?: string | null
+          user_id: string
+          verification_status?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          end_date?: string | null
+          evidence_source_id?: string | null
+          id?: string
+          name?: string
+          start_date?: string | null
+          updated_at?: string
+          url?: string | null
+          user_id?: string
+          verification_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "projects_evidence_source_id_fkey"
+            columns: ["evidence_source_id"]
+            isOneToOne: false
+            referencedRelation: "career_evidence_sources"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       resume_templates: {
         Row: {
@@ -310,6 +568,33 @@ export type Database = {
         }
         Relationships: []
       }
+      skills: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          normalized_name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          normalized_name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          normalized_name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       subscriptions: {
         Row: {
           created_at: string
@@ -388,6 +673,107 @@ export type Database = {
             columns: ["linked_resume_id"]
             isOneToOne: false
             referencedRelation: "resumes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      work_experience_bullets: {
+        Row: {
+          content: string
+          created_at: string
+          evidence_source_id: string | null
+          id: string
+          sort_order: number
+          updated_at: string
+          verification_status: string
+          work_experience_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          evidence_source_id?: string | null
+          id?: string
+          sort_order?: number
+          updated_at?: string
+          verification_status?: string
+          work_experience_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          evidence_source_id?: string | null
+          id?: string
+          sort_order?: number
+          updated_at?: string
+          verification_status?: string
+          work_experience_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "work_experience_bullets_evidence_source_id_fkey"
+            columns: ["evidence_source_id"]
+            isOneToOne: false
+            referencedRelation: "career_evidence_sources"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_experience_bullets_work_experience_id_fkey"
+            columns: ["work_experience_id"]
+            isOneToOne: false
+            referencedRelation: "work_experiences"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      work_experiences: {
+        Row: {
+          company: string
+          created_at: string
+          end_date: string | null
+          evidence_source_id: string | null
+          id: string
+          is_current: boolean
+          location: string | null
+          start_date: string
+          title: string
+          updated_at: string
+          user_id: string
+          verification_status: string
+        }
+        Insert: {
+          company: string
+          created_at?: string
+          end_date?: string | null
+          evidence_source_id?: string | null
+          id?: string
+          is_current?: boolean
+          location?: string | null
+          start_date: string
+          title: string
+          updated_at?: string
+          user_id: string
+          verification_status?: string
+        }
+        Update: {
+          company?: string
+          created_at?: string
+          end_date?: string | null
+          evidence_source_id?: string | null
+          id?: string
+          is_current?: boolean
+          location?: string | null
+          start_date?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+          verification_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "work_experiences_evidence_source_id_fkey"
+            columns: ["evidence_source_id"]
+            isOneToOne: false
+            referencedRelation: "career_evidence_sources"
             referencedColumns: ["id"]
           },
         ]
