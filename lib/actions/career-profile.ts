@@ -2,6 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 
+import {
+  careerProfileExtractionSchema,
+  countCareerProfileExtractionItems,
+  EMPTY_CAREER_PROFILE_EXTRACTION,
+  type CareerProfileExtraction,
+} from "@/lib/ai/career-profile-schema";
+import { CareerProfileExtractionError, extractCareerProfile } from "@/lib/ai/extract-career-profile";
 import { extractTextFromFile, TextExtractionError } from "@/lib/file-extraction";
 import { createClient } from "@/lib/supabase/server";
 import type { CareerProfileActionState } from "@/lib/validations/career-profile";
@@ -121,15 +128,20 @@ async function getOwnedProjectBulletProjectId(
   return data?.project_id ?? null;
 }
 
+function optionalFormValue(formData: FormData, key: string): string | undefined {
+  const value = formData.get(key);
+  return value === null ? undefined : (value as string);
+}
+
 function parseWorkExperienceFormData(formData: FormData) {
   return workExperienceSchema.safeParse({
     company: formData.get("company"),
     title: formData.get("title"),
-    location: formData.get("location"),
+    location: optionalFormValue(formData, "location"),
     startDate: formData.get("startDate"),
-    endDate: formData.get("endDate"),
+    endDate: optionalFormValue(formData, "endDate"),
     isCurrent: formData.get("isCurrent") === "on",
-    description: formData.get("description"),
+    description: optionalFormValue(formData, "description"),
     displayOrder: formData.get("displayOrder") ?? 0,
   });
 }
@@ -243,13 +255,13 @@ export async function deleteWorkExperienceAction(formData: FormData): Promise<vo
 function parseEducationFormData(formData: FormData) {
   return educationSchema.safeParse({
     institution: formData.get("institution"),
-    degree: formData.get("degree"),
-    fieldOfStudy: formData.get("fieldOfStudy"),
-    location: formData.get("location"),
-    startDate: formData.get("startDate"),
-    endDate: formData.get("endDate"),
+    degree: optionalFormValue(formData, "degree"),
+    fieldOfStudy: optionalFormValue(formData, "fieldOfStudy"),
+    location: optionalFormValue(formData, "location"),
+    startDate: optionalFormValue(formData, "startDate"),
+    endDate: optionalFormValue(formData, "endDate"),
     isCurrent: formData.get("isCurrent") === "on",
-    description: formData.get("description"),
+    description: optionalFormValue(formData, "description"),
     displayOrder: formData.get("displayOrder") ?? 0,
   });
 }
@@ -887,6 +899,152 @@ export async function extractUploadedFileAction(formData: FormData): Promise<voi
   }
 
   revalidatePath(CAREER_PROFILE_PATH);
+}
+
+interface OwnedUploadedFileForAiExtraction {
+  parsedStatus: string;
+  extractedText: string | null;
+}
+
+async function getOwnedUploadedFileForAiExtraction(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  fileId: string,
+  userId: string,
+): Promise<OwnedUploadedFileForAiExtraction | null> {
+  const { data } = await supabase
+    .from("uploaded_files")
+    .select("parsed_status, extracted_text")
+    .eq("id", fileId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!data) {
+    return null;
+  }
+
+  return { parsedStatus: data.parsed_status, extractedText: data.extracted_text };
+}
+
+const GENERIC_AI_EXTRACTION_FAILURE_MESSAGE =
+  "AI extraction failed. Please try again later.";
+
+export async function generateCareerProfileSuggestionsAction(formData: FormData): Promise<void> {
+  const uploadedFileId = formData.get("uploadedFileId");
+  if (typeof uploadedFileId !== "string" || !uploadedFileId) {
+    throw new Error("Missing file id.");
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    throw new Error("You must be signed in.");
+  }
+
+  const { supabase, userId } = auth;
+  const uploadedFile = await getOwnedUploadedFileForAiExtraction(supabase, uploadedFileId, userId);
+  if (!uploadedFile) {
+    throw new Error("File not found.");
+  }
+
+  if (uploadedFile.parsedStatus !== "parsed" || !uploadedFile.extractedText) {
+    throw new Error("This file has not been parsed yet.");
+  }
+
+  let status: "completed" | "failed";
+  let model: string;
+  let suggestions: CareerProfileExtraction = EMPTY_CAREER_PROFILE_EXTRACTION;
+  let errorMessage: string | null = null;
+  let inputTokens: number | null = null;
+  let outputTokens: number | null = null;
+
+  try {
+    const extraction = await extractCareerProfile(uploadedFile.extractedText);
+    status = "completed";
+    model = extraction.model;
+    suggestions = extraction.suggestions;
+    inputTokens = extraction.inputTokens;
+    outputTokens = extraction.outputTokens;
+  } catch (error: unknown) {
+    status = "failed";
+    model = process.env.ANTHROPIC_MODEL ?? "unknown";
+    errorMessage =
+      error instanceof CareerProfileExtractionError
+        ? error.message
+        : GENERIC_AI_EXTRACTION_FAILURE_MESSAGE;
+  }
+
+  const { error: insertError } = await supabase.from("ai_profile_suggestions").insert({
+    user_id: userId,
+    uploaded_file_id: uploadedFileId,
+    status,
+    model,
+    suggestions,
+    error_message: errorMessage,
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+  });
+
+  if (insertError) {
+    if (insertError.code === UNIQUE_VIOLATION_CODE) {
+      throw new Error("Suggestions already exist for this file.");
+    }
+    throw new Error(getErrorMessage(insertError));
+  }
+
+  revalidatePath(CAREER_PROFILE_PATH);
+}
+
+export interface CareerProfileSuggestionSummary {
+  status: string;
+  errorMessage: string | null;
+  counts: {
+    workExperiences: number;
+    education: number;
+    skills: number;
+    projects: number;
+  } | null;
+}
+
+export async function getCareerProfileSuggestionSummariesAction(
+  uploadedFileIds: string[],
+): Promise<Record<string, CareerProfileSuggestionSummary>> {
+  if (uploadedFileIds.length === 0) {
+    return {};
+  }
+
+  const auth = await requireUserId();
+  if (!auth) {
+    return {};
+  }
+
+  const { supabase, userId } = auth;
+  const { data, error } = await supabase
+    .from("ai_profile_suggestions")
+    .select("uploaded_file_id, status, error_message, suggestions, created_at")
+    .eq("user_id", userId)
+    .in("uploaded_file_id", uploadedFileIds)
+    .order("created_at", { ascending: false });
+
+  if (error || !data) {
+    return {};
+  }
+
+  const summariesByFileId: Record<string, CareerProfileSuggestionSummary> = {};
+
+  for (const row of data) {
+    if (summariesByFileId[row.uploaded_file_id]) {
+      continue;
+    }
+
+    const parsed = careerProfileExtractionSchema.safeParse(row.suggestions);
+
+    summariesByFileId[row.uploaded_file_id] = {
+      status: row.status,
+      errorMessage: row.error_message,
+      counts: parsed.success ? countCareerProfileExtractionItems(parsed.data) : null,
+    };
+  }
+
+  return summariesByFileId;
 }
 
 export async function createWorkExperienceBulletAction(

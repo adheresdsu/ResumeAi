@@ -39,6 +39,56 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_profile_suggestions: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          id: string
+          input_tokens: number | null
+          model: string
+          output_tokens: number | null
+          reviewed_at: string | null
+          status: string
+          suggestions: Json
+          uploaded_file_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          input_tokens?: number | null
+          model: string
+          output_tokens?: number | null
+          reviewed_at?: string | null
+          status?: string
+          suggestions: Json
+          uploaded_file_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          input_tokens?: number | null
+          model?: string
+          output_tokens?: number | null
+          reviewed_at?: string | null
+          status?: string
+          suggestions?: Json
+          uploaded_file_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_profile_suggestions_uploaded_file_id_fkey"
+            columns: ["uploaded_file_id"]
+            isOneToOne: false
+            referencedRelation: "uploaded_files"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_usage_logs: {
         Row: {
           cost_estimate: number
