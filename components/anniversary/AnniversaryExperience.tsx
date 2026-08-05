@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { AnniversaryIntro } from "@/components/anniversary/AnniversaryIntro";
 import { BackToTop } from "@/components/anniversary/BackToTop";
@@ -45,7 +45,7 @@ export function AnniversaryExperience({ content }: AnniversaryExperienceProps) {
   const [introVisible, setIntroVisible] = useState(true);
   const [playSignal, setPlaySignal] = useState(0);
   const [isUnlocked, setIsUnlocked] = useState(!content.privacyGate.enabled);
-  const [monogramClicks, setMonogramClicks] = useState(0);
+  const monogramClicks = useRef(0);
   const [showEasterEgg, setShowEasterEgg] = useState(false);
 
   useEffect(() => {
@@ -69,14 +69,11 @@ export function AnniversaryExperience({ content }: AnniversaryExperienceProps) {
   };
 
   const onMonogramClick = () => {
-    setMonogramClicks((previous) => {
-      const next = previous + 1;
-      if (next >= 5) {
-        setShowEasterEgg(true);
-        return 0;
-      }
-      return next;
-    });
+    monogramClicks.current += 1;
+    if (monogramClicks.current >= 5) {
+      setShowEasterEgg(true);
+      monogramClicks.current = 0;
+    }
   };
 
   if (!isUnlocked) {
