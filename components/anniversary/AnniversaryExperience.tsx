@@ -101,6 +101,8 @@ export function AnniversaryExperience({ content }: AnniversaryExperienceProps) {
       />
 
       <motion.main
+        aria-hidden={introVisible}
+        className={introVisible ? "pointer-events-none select-none" : ""}
         initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: introVisible ? 0 : 1, y: introVisible ? 18 : 0 }}
         transition={{ duration: reduceMotion ? 0 : 0.9, ease: [0.22, 1, 0.36, 1] }}
